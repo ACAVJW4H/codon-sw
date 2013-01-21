@@ -305,6 +305,48 @@ _charCompare(int const c, Tag<Dna5Q_> const & /* tag*/)
     return _charCompare(c, Tag<Dna5_>());
 }
 
+inline int
+_charCompare(int const c, Tag<Iupac_> const & /* tag*/)
+{
+    switch (c)
+    {
+        case 'A':
+        case 'B':
+        case 'C':
+        case 'D':
+        case 'G':
+        case 'H':
+        case 'K':
+        case 'M':
+        case 'N':
+        case 'R':
+        case 'S':
+        case 'T':
+        case 'U':
+        case 'V':
+        case 'W':
+        case 'Y':
+        case 'a':
+        case 'b':
+        case 'c':
+        case 'd':
+        case 'g':
+        case 'h':
+        case 'k':
+        case 'm':
+        case 'n':
+        case 'r':
+        case 's':
+        case 't':
+        case 'u':
+        case 'v':
+        case 'w':
+        case 'y':
+            return true;
+    }
+    return false;
+}
+
 template <typename TSpec>
 inline int
 _charCompare(int const c,
