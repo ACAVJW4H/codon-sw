@@ -20,6 +20,7 @@ struct Options
     std::string ref_fasta_path;
     std::string qry_fasta_path;
     std::string output_prefix;
+    seqan::CharString command_line;
     bool is_fastq;
 };
 
@@ -172,12 +173,19 @@ int perform_alignment(const Options& options)
     appendValue(firstRecord.tags, BamHeaderRecord::TTag("VN", "1.0"));
     appendValue(header.records, firstRecord);
 
-    BamHeaderRecord seqRecord;
-    seqRecord.type = BAM_HEADER_REFERENCE;
-    appendValue(seqRecord.tags, BamHeaderRecord::TTag("SN", ref_id));
-    appendValue(seqRecord.tags, BamHeaderRecord::TTag("LN", std::to_string(length(ref_seq))));
-    appendValue(header.records, seqRecord);
+    BamHeaderRecord seq_record;
+    seq_record.type = BAM_HEADER_REFERENCE;
+    appendValue(seq_record.tags, BamHeaderRecord::TTag("SN", ref_id));
+    appendValue(seq_record.tags, BamHeaderRecord::TTag("LN", std::to_string(length(ref_seq))));
+    appendValue(header.records, seq_record);
     appendValue(header.sequenceInfos, BamHeader::TSequenceInfo(ref_id, seqan::length(ref_seq)));
+    BamHeaderRecord program_record;
+    program_record.type = seqan::BAM_HEADER_PROGRAM;
+    appendValue(program_record.tags, BamHeaderRecord::TTag("ID", 1));
+    appendValue(program_record.tags, BamHeaderRecord::TTag("PN", "codon-align"));
+    appendValue(program_record.tags, BamHeaderRecord::TTag("VN", CODON_ALIGN_VERSION));
+    appendValue(program_record.tags, BamHeaderRecord::TTag("CL", options.command_line));
+    appendValue(header.records, program_record);
 
     std::fstream qry_fasta(options.qry_fasta_path, std::ios_base::in | std::ios_base::binary);
     if (!qry_fasta.good()) {
@@ -222,6 +230,7 @@ int perform_alignment(const Options& options)
         record.pos = beginPosition(row(a.dna_alignment, 0));
         record.seq = qry_seq;
         record.qual = qry_qualities;
+        record.mapQ = 40; // TODO: Assign
         align_cigar(a.dna_alignment, record.cigar);
         BamTagsDict d(record.tags);
         setTagValue(d, "AS", a.max_score);
@@ -248,6 +257,12 @@ int main(const int argc, const char** argv)
     Options options;
     int result = parse_args(argc, argv, options);
     if(result) return result;
+
+    for(int i = 0; i < argc; i++) {
+        if(i > 0)
+            appendValue(options.command_line, ' ');
+        append(options.command_line, argv[i]);
+    }
 
     // Parse
     if(options.is_fastq) {

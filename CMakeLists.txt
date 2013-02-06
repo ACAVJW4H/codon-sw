@@ -8,7 +8,7 @@ set(CMAKE_MODULE_PATH
     ${CMAKE_MODULE_PATH})
 include(GetGitRevisionDescription)
 
-git_describe(GIT_DESCRIPTION --always --tag)
+git_describe(GIT_DESCRIPTION --always --long)
 set(CODON_ALIGN_VERSION_MAJOR 0)
 set(CODON_ALIGN_VERSION_MINOR 0)
 set(CODON_ALIGN_VERSION_PATCH 1)
