@@ -1,5 +1,6 @@
 -Ideps/seqan/core/include
--I_build
+-I_build/Debug
+-I_build/Release
 -std=c++0x
 -DSEQAN_HAS_ZLIB
 -DSEQAN_HAS_BZIP2

@@ -1,3 +1,4 @@
+#include "config.h"
 #include "codon_smithwaterman_gotoh.hpp"
 
 #include <seqan/align.h>
@@ -36,6 +37,7 @@ int parse_args(const int argc, const char** argv, Options& options)
 
     seqan::addUsageLine(parser, "[options] <reference_fasta> <query_fasta> <output_prefix>");
     seqan::setDate(parser, __DATE__);
+    seqan::setVersion(parser, CODON_ALIGN_VERSION);
 
     const seqan::ArgumentParser::ParseResult res = seqan::parse(parser, argc, argv);
 
@@ -122,6 +124,22 @@ void align_cigar(const seqan::Align<T>& alignment, seqan::String<seqan::CigarEle
     assert(total_count == query_length);
 }
 
+template<typename T>
+int calculate_nm(const seqan::Align<T>& alignment)
+{
+    int result = 0;
+    auto ref_it = begin(row(alignment, 0)),
+         qry_it = begin(row(alignment, 1)),
+         ref_end = end(row(alignment, 0));
+
+    for(; ref_it != ref_end; ++ref_it, ++qry_it) {
+        if(isGap(ref_it) && isGap(qry_it)) continue;
+        if(isGap(ref_it) || isGap(qry_it) || *qry_it != *ref_it)
+            result++;
+    }
+    return result;
+}
+
 template<typename Alphabet>
 int perform_alignment(const Options& options)
 {
@@ -168,7 +186,7 @@ int perform_alignment(const Options& options)
     }
     RecordReader<std::fstream, SinglePass<> > qry_reader(qry_fasta);
 
-    seqan::CharString qry_id;
+    seqan::CharString qry_name;
     IupacString qry_seq;
     seqan::String<char> qry_qualities;
 
@@ -181,35 +199,33 @@ int perform_alignment(const Options& options)
     std::ofstream out_nt(options.output_prefix + "_nt.fasta");
     std::ofstream out_aa(options.output_prefix + "_aa.fasta");
 
-    auto read_record = [&qry_id, &qry_seq, &qry_reader, &qry_qualities]() -> int
+    auto read_record = [&qry_name, &qry_seq, &qry_reader, &qry_qualities]() -> int
     {
         if(HasQualities<Alphabet>::VALUE)
-            return readRecord(qry_id, qry_seq, qry_qualities, qry_reader, Fastq());
+            return readRecord(qry_name, qry_seq, qry_qualities, qry_reader, Fastq());
 
-        int result = readRecord(qry_id, qry_seq, qry_reader, Fasta());
+        int result = readRecord(qry_name, qry_seq, qry_reader, Fasta());
         qry_qualities = "*";
         return result;
     };
 
     size_t c = 0;
     while(read_record() == 0) {
+        StringSet<CharString> parts;
+        strSplit(parts, qry_name, ' ', true, 1);
         codonalign::CodonAlignment<int> a = codonalign::codon_align_sw(ref_seq, qry_seq, codonalign::Macse454Default);
         BamAlignmentRecord record;
 
-        record.qName = qry_id;
-        record.flag = BAM_FLAG_ALL_PROPER;
+        record.qName = parts[0];
+        record.flag = 0;
         record.rId = 0;
-        record.pos = clippedBeginPosition(row(a.dna_alignment, 0));
-        record.rNextId = BamAlignmentRecord::INVALID_REFID;
-        record.pNext = BamAlignmentRecord::INVALID_POS;
-        record.tLen = 0;
+        record.pos = beginPosition(row(a.dna_alignment, 0));
         record.seq = qry_seq;
         record.qual = qry_qualities;
         align_cigar(a.dna_alignment, record.cigar);
         BamTagsDict d(record.tags);
         setTagValue(d, "AS", a.max_score);
-        setTagValue(d, "a0", row(a.aa_alignment, 0));
-        setTagValue(d, "a1", row(a.aa_alignment, 1));
+        setTagValue(d, "NM", calculate_nm(a.dna_alignment));
 
         if(write2(out_stream, record, context, seqan::Sam()) != 0) {
             std::cerr << "Could not write BAM record\n";
@@ -217,10 +233,10 @@ int perform_alignment(const Options& options)
         }
 
         if(c % 10)
-            std::cerr << std::setw(10) << ++c << " " << qry_id << '\r';
+            std::cerr << std::setw(10) << ++c << " " << qry_name << '\r';
 
-        print_alignment(a.dna_alignment, out_nt, ref_id, qry_id);
-        print_alignment(a.aa_alignment, out_aa, ref_id, qry_id);
+        print_alignment(a.dna_alignment, out_nt, ref_id, qry_name);
+        print_alignment(a.aa_alignment, out_aa, ref_id, qry_name);
     }
 
     return 0;

@@ -2,7 +2,24 @@ cmake_minimum_required (VERSION 2.8.1)
 
 project(CodonAligner)
 
+# Versioning
+set(CMAKE_MODULE_PATH
+    ${CMAKE_CURRENT_SOURCE_DIR}/deps/cmake
+    ${CMAKE_MODULE_PATH})
+include(GetGitRevisionDescription)
+
+git_describe(GIT_DESCRIPTION --always --tag)
+set(CODON_ALIGN_VERSION_MAJOR 0)
+set(CODON_ALIGN_VERSION_MINOR 0)
+set(CODON_ALIGN_VERSION_PATCH 1)
+configure_file (
+  "${PROJECT_SOURCE_DIR}/src/config.h.in"
+  "${PROJECT_BINARY_DIR}/config.h"
+  )
+include_directories("${PROJECT_BINARY_DIR}")
+
 set(CMAKE_CXX_FLAGS "-std=c++0x -Wall -pedantic")
+set(SEQAN_C++11_STANDARD "ON")
 include_directories("deps/seqan/core/include")
 include_directories("deps/seqan/extras/include")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
