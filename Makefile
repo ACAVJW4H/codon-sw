@@ -1,4 +1,4 @@
-.PHONY: all compile setup-cmake clean style
+.PHONY: all compile setup-cmake clean style doc
 
 BUILD = _build
 
@@ -18,7 +18,10 @@ setup-cmake:
 	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) ../..
 
 clean:
-	rm -rf $(BUILD)
+	rm -rf $(BUILD) html latex
+
+doc:
+	doxygen
 
 style:
 	astyle  -A3 \

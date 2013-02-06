@@ -5,7 +5,6 @@
 #include "matrix.hpp"
 
 #include <seqan/align.h>
-#include <seqan/bam_io.h>
 #include <seqan/score.h>
 #include <seqan/sequence.h>
 
@@ -24,12 +23,13 @@ struct ScoringScheme
 {
     /// <b>amino acid</b> Gap open penalty
     TScore gapopen;
-    /// <b>amino acid<b> Gap extension penalty
+    /// <b>amino acid</b> Gap extension penalty
     TScore gapextend;
-    /// Cost of a stop codon
     /// Cost of a frame shift
     TScore frameshift;
+    /// Cost of a stop codon
     TScore stop;
+    /// Substitution matrix
     TMatrix substitution;
 };
 
@@ -116,7 +116,6 @@ template <typename TScore>
 struct CodonAlignment
 {
     seqan::Align<seqan::IupacString> dna_alignment;
-    seqan::String<seqan::CigarElement<>> dna_cigar;
     seqan::Align<seqan::Peptide> aa_alignment;
     TScore max_score;
 
@@ -143,37 +142,25 @@ traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
     using namespace seqan;
     using std::pair;
     using std::vector;
-    using CigarString = String<CigarElement<>>;
 
-    const unsigned l1 = length(s1), l2 = length(s2);
     const vector<AminoAcid> t1 = _translations(s1),
-                                 t2 = _translations(s2);
+                            t2 = _translations(s2);
     Peptide aa1, aa2;
     vector<size_t> aa1_gaps, aa2_gaps;
     CodonAlignment<TScore> result(s1, s2);
-
-    CigarString &dna_cigar = result.dna_cigar;
 
     // Find maximum score
     pair<size_t, size_t> max_pos = d.rev_index(max_index(d.begin(), d.end()));
     result.max_score = d(max_pos.first, max_pos.second);
 
-    setClippedEndPosition(row(result.dna_alignment, 0), max_pos.first);
-    setClippedEndPosition(row(result.dna_alignment, 1), max_pos.second);
+    setEndPosition(row(result.dna_alignment, 0), max_pos.first);
+    setEndPosition(row(result.dna_alignment, 1), max_pos.second);
 
     int i = max_pos.first, j = max_pos.second;
-    assert(i <= l1);
-    assert(j <= l2);
-
-    appendValue(dna_cigar, CigarElement<>('S', l2 - max_pos.second));
-    auto add_dna_cigar = [&dna_cigar](const char t, const unsigned c) -> void
-    {
-        CigarElement<>& last = back(dna_cigar);
-        if(last.operation == t)
-            last.count += c;
-        else
-            appendValue(dna_cigar, CigarElement<>(t, c));
-    };
+    assert(i > 0);
+    assert(j > 0);
+    assert(i <= length(s1));
+    assert(j <= length(s2));
 
     while(i > 0 || j > 0) {
         assert(i >= 0);
@@ -182,7 +169,6 @@ traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
         if(tb.stop()) break;
 
         assert(tb.x_offset + tb.y_offset > 0);
-
 
         if(tb.x_offset == 3)
             append(aa1, t1[i-1]);
@@ -212,26 +198,14 @@ traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
             insertGaps(row(result.dna_alignment, 1), j, 3 - tb.y_offset);
         }
 
-        for(unsigned off = 1; off <= 3; ++off) {
-            if(tb.y_offset >= off && tb.x_offset >= off) {
-                add_dna_cigar('M', 1);
-            } else if(tb.y_offset >= off && tb.x_offset < off) {
-                add_dna_cigar('D', 1);
-            } else if(tb.x_offset >= off && tb.y_offset < off) {
-                add_dna_cigar('I', 1);
-            }
-        }
-
         i -= tb.x_offset;
         j -= tb.y_offset;
     }
 
 
-    setClippedBeginPosition(row(result.dna_alignment, 0), i);
-    setClippedBeginPosition(row(result.dna_alignment, 1), j);
-    add_dna_cigar('S', j);
+    setBeginPosition(row(result.dna_alignment, 0), i);
+    setBeginPosition(row(result.dna_alignment, 1), j);
 
-    reverse(dna_cigar);
     reverse(aa1);
     reverse(aa2);
     resize(rows(result.aa_alignment), 2);
@@ -256,52 +230,55 @@ traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
     return result;
 }
 
-/// \brief Align s1 to s2
-
-/// Calculates the following recursion:
-/// \f[
-/// P_{i,j} = \max \begin{cases} d_{i-3,j} + stop\_s1 + g_o \\
-///                              p_{i-3,j} + stop\_s1 + g_e \\
-///                              \\
-///                              d_{i-2,j} + stop\_s1 + \delta + g_o \\
-///                              p_{i-2,j} + stop\_s1 + \delta + g_e \\
-///                              \\
-///                              d_{i-1,j} + stop\_s1 + \delta + g_o \\
-///                              p_{i-1,j} + stop\_s1 + \delta + g_e
-///                 \end{cases}
-/// \f]
-///
-/// \f[
-/// Q_{i,j} = \max \begin{cases} d_{i,j-3} + stop\_s1 + g_o \\
-///                              q_{i,j-3} + stop\_s1 + g_e \\
-///                              \\
-///                              d_{i,j-2} + stop\_s1 + \delta + g_o \\
-///                              q_{i,j-2} + stop\_s1 + \delta + g_e \\
-///                              \\
-///                              d_{i,j-1} + stop\_s1 + \delta + g_o \\
-///                              q_{i,j-1} + stop\_s1 + \delta + g_e
-///                 \end{cases}
-/// \f]
-/// \f[
-/// D_{i,j} = \max \begin{cases}
-///                   0 \\
-///                   d_{i-3,j-3} + \sigma(a_i, b_j) \\
-///                   \\
-///                   d_{i-3,j-2} + stop\_s1 + \delta \\
-///                   d_{i-3,j-1} + stop\_s1 + \delta \\
-///                   \\
-///                   d_{i-2,j-3} + stop\_s2 + \delta
-///                   d_{i-1,j-3} + stop\_s2 + \delta
-///                   \\
-///                   d_{i-1,j-1} + 2\delta \\
-///                   d_{i-1,j-2} + 2\delta \\
-///                   d_{i-2,j-1} + 2\delta \\
-///                   d_{i-2,j-2} + 2\delta \\
-///                   \\
-///                   p_{i,j} \\
-///                   q_{i,j}
-///                 \end{cases}
-/// \f]
+/** \brief Align s1 to s2
+ *
+ * Calculates the following recursion:
+ * \f[
+ * P_{i,j} = \max \begin{cases} d_{i-3,j} + stop\_s1 + g_o,\\
+ *                              p_{i-3,j} + stop\_s1 + g_e,\\
+ *                              \\
+ *                              d_{i-2,j} + stop\_s1 + \delta + g_o,\\
+ *                              p_{i-2,j} + stop\_s1 + \delta + g_e,\\
+ *                              \\
+ *                              d_{i-1,j} + stop\_s1 + \delta + g_o,\\
+ *                              p_{i-1,j} + stop\_s1 + \delta + g_e
+ *                 \end{cases}
+ * \f]
+ *
+ * \f[
+ * Q_{i,j} = \max \begin{cases} d_{i,j-3} + stop\_s2 + g_o, \\
+ *                              q_{i,j-3} + stop\_s2 + g_e, \\
+ *                              \\
+ *                              d_{i,j-2} + stop\_s2 + \delta + g_o, \\
+ *                              q_{i,j-2} + stop\_s2 + \delta + g_e, \\
+ *                              \\
+ *                              d_{i,j-1} + stop\_s2 + \delta + g_o, \\
+ *                              q_{i,j-1} + stop\_s2 + \delta + g_e
+ *                 \end{cases}
+ * \f]
+ * \f[
+ * D_{i,j} = \max \begin{cases}
+ *                   0 \\
+ *                   d_{i-3,j-3} + \sigma(a_i, b_j),\\
+ *                   \\
+ *                   d_{i-3,j-2} + stop\_s1 + \delta,\\
+ *                   d_{i-3,j-1} + stop\_s1 + \delta,\\
+ *                   \\
+ *                   d_{i-2,j-3} + stop\_s2 + \delta,
+ *                   d_{i-1,j-3} + stop\_s2 + \delta,
+ *                   \\
+ *                   d_{i-1,j-1} + 2\delta,\\
+ *                   d_{i-1,j-2} + 2\delta,\\
+ *                   d_{i-2,j-1} + 2\delta,\\
+ *                   d_{i-2,j-2} + 2\delta,\\
+ *                   \\
+ *                   p_{i,j},\\
+ *                   q_{i,j}
+ *                 \end{cases}
+ * \f]
+ * Where \f$\delta\f$ is the frame shift penalty, and \f$sigma(a, b)\f$ is the substitution cost between amino acids
+ * \f$a\f$ and \f$b\f$.
+ */
 template<typename TScore, typename TMatrix>
 CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan::IupacString& s2, const ScoringScheme<TScore,TMatrix>& score)
 {
