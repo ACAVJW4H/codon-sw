@@ -27,6 +27,8 @@ struct ScoringScheme
     TScore gapextend;
     /// Cost of a frame shift
     TScore frameshift;
+    /// Cost of a frame shift in a homopolymer
+    TScore homopolymer_frameshift;
     /// Cost of a stop codon
     TScore stop;
     /// Substitution matrix
@@ -34,10 +36,8 @@ struct ScoringScheme
 };
 
 //matrix (BLOSUM 62), gap opening (−7), gap extension (−1), frameshift (−30), and stop codon (−100) except for 454 reads for which lower penalties were assigned to frameshift (−10) and stop codon (−60)
-const ScoringScheme<int,seqan::Blosum62> MacseDefault { -7, -1, -30, -100, seqan::Blosum62() };
-const ScoringScheme<int,seqan::Blosum62> Macse454Default { -7, -1, -10, -60, seqan::Blosum62() };
-//const ScoringScheme<int,seqan::Blosum62> Macse454Default { -10, -1, -10, -10, seqan::Blosum62() };
-
+const ScoringScheme<int,seqan::Blosum62> MacseDefault { -7, -1, -30, -30, -100, seqan::Blosum62() };
+const ScoringScheme<int,seqan::Blosum62> Macse454Default { -7, -1, -30, -30, -60, seqan::Blosum62() };
 
 struct Traceback
 {
@@ -131,6 +131,20 @@ template<typename TIter>
 size_t max_index(TIter b, TIter e)
 {
     return std::max_element(b, e) - b;
+}
+
+std::vector<bool> is_homopolymer(const seqan::IupacString& s)
+{
+    using namespace seqan;
+    const size_t l = seqan::length(s);
+    std::vector<bool> result;
+    result.reserve(l);
+    result.push_back(false);
+    for(size_t i = 1; i < l; i++) {
+        result.push_back(s[i] == s[i-1]);
+    }
+    assert(result.size() == l);
+    return result;
 }
 
 template<typename TScore>
@@ -287,8 +301,9 @@ CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan:
     using std::vector;
 
     const unsigned l1 = seqan::length(s1), l2 = seqan::length(s2);
-    const std::vector<AminoAcid> t1 = _translations(s1),
-                                 t2 = _translations(s2);
+    const vector<AminoAcid> t1 = _translations(s1),
+                            t2 = _translations(s2);
+    const vector<bool> is_hp = is_homopolymer(s2);
 
     Matrix<TScore> d(l1 + 1, l2 + 1), // Match
                    p(l1 + 1, l2 + 1), // Deletion in query
@@ -300,7 +315,6 @@ CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan:
         for(long j = 1; j <= l2; j++) {
             AminoAcid aa1 = 'X', aa2 = 'X';
 
-            // TODO: CHECK
             if(i > 0) aa1 = t1[i-1];
             if(j > 0) aa2 = t2[j-1];
 
@@ -320,6 +334,7 @@ CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan:
             assert(stop_s1 <= 0);
             assert(stop_s2 <= 0);
             assert(score.frameshift < 0);
+            assert(score.homopolymer_frameshift < 0);
             assert(score.gapopen < 0);
             assert(score.gapextend < 0);
 
@@ -330,6 +345,8 @@ CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan:
                 return p1.first < p2.first;
             };
 
+
+            TScore frameshift = j > 0 && is_hp[j-1] ? score.homopolymer_frameshift : score.frameshift;
             // Calculate scores
             std::vector<TPair> scores;
             scores.reserve(15);
@@ -344,13 +361,14 @@ CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan:
             }
             // Frameshift
             if(i >= 2) {
-                scores.emplace_back(d(i-2, j) + stop_s1 + score.frameshift + score.gapopen, T20);
-                scores.emplace_back(p(i-2, j) + stop_s1 + score.frameshift + score.gapextend, T20);
+                scores.emplace_back(d(i-2, j) + stop_s1 + frameshift + score.gapopen, T20);
+                scores.emplace_back(p(i-2, j) + stop_s1 + frameshift + score.gapextend, T20);
             }
             if(i >= 1) {
-                scores.emplace_back(d(i-1, j) + stop_s1 + score.frameshift + score.gapopen, T10);
-                scores.emplace_back(p(i-1, j) + stop_s1 + score.frameshift + score.gapextend, T10);
+                scores.emplace_back(d(i-1, j) + stop_s1 + frameshift + score.gapopen, T10);
+                scores.emplace_back(p(i-1, j) + stop_s1 + frameshift + score.gapextend, T10);
             }
+
 
             TPair p_max = *std::max_element(std::begin(scores), std::end(scores), first_comp);
             p(i, j) = p_max.first;
@@ -363,13 +381,13 @@ CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan:
                 scores.emplace_back(q(i, j-3) + stop_s1 + score.gapextend, T03);
             }
             if(j >= 2) {
-                scores.emplace_back(d(i, j-2) + stop_s1 + score.frameshift + score.gapopen, T02);
-                scores.emplace_back(q(i, j-2) + stop_s1 + score.frameshift + score.gapextend, T02);
+                scores.emplace_back(d(i, j-2) + stop_s1 + frameshift + score.gapopen, T02);
+                scores.emplace_back(q(i, j-2) + stop_s1 + frameshift + score.gapextend, T02);
             }
             // Frameshift
             if(j >= 1) {
-                scores.emplace_back(d(i, j-1) + stop_s1 + score.frameshift + score.gapopen, T01);
-                scores.emplace_back(q(i, j-1) + stop_s1 + score.frameshift + score.gapextend, T01);
+                scores.emplace_back(d(i, j-1) + stop_s1 + frameshift + score.gapopen, T01);
+                scores.emplace_back(q(i, j-1) + stop_s1 + frameshift + score.gapextend, T01);
             }
             TPair q_max = *std::max_element(std::begin(scores), std::end(scores), first_comp);
             q(i, j) = q_max.first;
@@ -384,24 +402,24 @@ CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan:
 
             // Frameshifts on s2
             if(i >= 3) {
-                if(j >= 2) scores.emplace_back(d(i-3, j-2) + stop_s1 + score.frameshift, T32);
-                if(j >= 1) scores.emplace_back(d(i-3, j-1) + stop_s1 + score.frameshift, T31);
+                if(j >= 2) scores.emplace_back(d(i-3, j-2) + stop_s1 + frameshift, T32);
+                if(j >= 1) scores.emplace_back(d(i-3, j-1) + stop_s1 + frameshift, T31);
             }
 
             // Frameshifts on s1
             if(j >= 3) {
-                if(i >= 2) scores.emplace_back(d(i-2, j-3) + score.frameshift + stop_s2, T23);
-                if(i >= 1) scores.emplace_back(d(i-1, j-3) + score.frameshift + stop_s2, T13);
+                if(i >= 2) scores.emplace_back(d(i-2, j-3) + frameshift + stop_s2, T23);
+                if(i >= 1) scores.emplace_back(d(i-1, j-3) + frameshift + stop_s2, T13);
             }
 
             // frameshifts in both
             if(i >= 1) {
-                if(j >= 1) scores.emplace_back(d(i-1, j-1) + 2*score.frameshift, T11);
-                if(j >= 2) scores.emplace_back(d(i-1, j-2) + 2*score.frameshift, T12);
+                if(j >= 1) scores.emplace_back(d(i-1, j-1) + 2*frameshift, T11);
+                if(j >= 2) scores.emplace_back(d(i-1, j-2) + 2*frameshift, T12);
             }
             if(i >= 2) {
-                if(j >= 1) scores.emplace_back(d(i-2, j-1) + 2*score.frameshift, T21);
-                if(j >= 2) scores.emplace_back(d(i-2, j-2) + 2*score.frameshift, T22);
+                if(j >= 1) scores.emplace_back(d(i-2, j-1) + 2*frameshift, T21);
+                if(j >= 2) scores.emplace_back(d(i-2, j-2) + 2*frameshift, T22);
             }
 
             scores.push_back(p_max);
