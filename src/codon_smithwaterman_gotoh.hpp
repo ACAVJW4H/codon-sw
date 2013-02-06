@@ -65,7 +65,7 @@ const Traceback T00{0,0},
                 T32{3,2},
                 T33{3,3};
 
-// Outputs
+// For debugging
 ::std::ostream& operator<<(std::ostream& os, const Traceback& t)
 {
     os << "{" << static_cast<unsigned short>(t.x_offset) << ','

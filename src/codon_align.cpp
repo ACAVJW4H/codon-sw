@@ -22,36 +22,57 @@ struct Options
     std::string output_prefix;
     seqan::CharString command_line;
     bool is_fastq;
+    bool quiet;
+    codonalign::ScoringScheme<int, seqan::Blosum62> scoring_scheme;
 };
 
 /// Parse arguments from command line, storing the parsed values in \c options.
 /// \returns Exit code.
 int parse_args(const int argc, const char** argv, Options& options)
 {
-    seqan::ArgumentParser parser("codon-align");
-    seqan::addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "ref_fasta"));
-    seqan::addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "qry_fastx"));
-    seqan::addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "output_prefix"));
+    using namespace seqan;
+    using codonalign::Macse454Default;
+    ArgumentParser parser("codon-align");
+    addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "ref_fasta"));
+    addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "qry_fastx"));
+    addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "output_prefix"));
 
-    seqan::addOption(parser, seqan::ArgParseOption(
-                         "q", "fastq", "Input is FASTQ."));
+    addOption(parser, ArgParseOption("", "fastq", "Input is FASTQ."));
+    addOption(parser, ArgParseOption("q", "quiet", "Align quietly."));
+    addOption(parser, ArgParseOption("fo", "gap-open", "", ArgParseArgument::INTEGER));
+    setDefaultValue(parser, "gap-open", Macse454Default.gapopen);
+    addOption(parser, ArgParseOption("ge", "gap-extend", "", ArgParseArgument::INTEGER));
+    setDefaultValue(parser, "gap-extend", Macse454Default.gapextend);
+    addOption(parser, ArgParseOption("st", "stop-codon", "", ArgParseArgument::INTEGER));
+    setDefaultValue(parser, "stop-codon", Macse454Default.stop);
+    addOption(parser, ArgParseOption("fs", "frameshift", "", ArgParseArgument::INTEGER));
+    setDefaultValue(parser, "frameshift", Macse454Default.frameshift);
 
-    seqan::addUsageLine(parser, "[options] <reference_fasta> <query_fasta> <output_prefix>");
-    seqan::setDate(parser, __DATE__);
-    seqan::setVersion(parser, CODON_ALIGN_VERSION);
+    addUsageLine(parser, "[options] <reference_fasta> <query_fasta> <output_prefix>");
+    setDate(parser, __DATE__);
+    setVersion(parser, CODON_ALIGN_VERSION);
 
     const seqan::ArgumentParser::ParseResult res = seqan::parse(parser, argc, argv);
 
     // If parsing was not successful then exit with code 1 if there were errors.
     // Otherwise, exit with code 0 (e.g. help was printed).
-    if(res != seqan::ArgumentParser::PARSE_OK) {
+    if(res != ArgumentParser::PARSE_OK) {
         return res;
     }
 
-    seqan::getArgumentValue(options.ref_fasta_path, parser, 0);
-    seqan::getArgumentValue(options.qry_fasta_path, parser, 1);
-    seqan::getArgumentValue(options.output_prefix, parser, 2);
-    seqan::getOptionValue(options.is_fastq, parser, "fastq");
+    getArgumentValue(options.ref_fasta_path, parser, 0);
+    getArgumentValue(options.qry_fasta_path, parser, 1);
+    getArgumentValue(options.output_prefix, parser, 2);
+    getOptionValue(options.is_fastq, parser, "fastq");
+    getOptionValue(options.quiet, parser, "quiet");
+
+    // Scoring
+    codonalign::ScoringScheme<int, seqan::Blosum62> &scheme = options.scoring_scheme;
+    getOptionValue(scheme.gapopen, parser, "gap-open");
+    getOptionValue(scheme.gapextend, parser, "gap-extend");
+    getOptionValue(scheme.stop, parser, "stop-codon");
+    getOptionValue(scheme.frameshift, parser, "frameshift");
+
     return 0;
 }
 
@@ -221,7 +242,7 @@ int perform_alignment(const Options& options)
     while(read_record() == 0) {
         StringSet<CharString> parts;
         strSplit(parts, qry_name, ' ', true, 1);
-        codonalign::CodonAlignment<int> a = codonalign::codon_align_sw(ref_seq, qry_seq, codonalign::Macse454Default);
+        codonalign::CodonAlignment<int> a = codonalign::codon_align_sw(ref_seq, qry_seq, options.scoring_scheme);
         BamAlignmentRecord record;
 
         record.qName = parts[0];
@@ -230,7 +251,7 @@ int perform_alignment(const Options& options)
         record.pos = beginPosition(row(a.dna_alignment, 0));
         record.seq = qry_seq;
         record.qual = qry_qualities;
-        record.mapQ = 40; // TODO: Assign
+        record.mapQ = 30; // TODO: Assign
         align_cigar(a.dna_alignment, record.cigar);
         BamTagsDict d(record.tags);
         setTagValue(d, "AS", a.max_score);
@@ -241,8 +262,8 @@ int perform_alignment(const Options& options)
             return 1;
         }
 
-        if(c % 10)
-            std::cerr << std::setw(10) << ++c << " " << qry_name << '\r';
+        if(c++ % 10 == 0 && !options.quiet)
+            std::cerr << std::setw(10) << c << " " << qry_name << '\r';
 
         print_alignment(a.dna_alignment, out_nt, ref_id, qry_name);
         print_alignment(a.aa_alignment, out_aa, ref_id, qry_name);
