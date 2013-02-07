@@ -23,6 +23,8 @@ struct Options
     seqan::CharString command_line;
     bool is_fastq;
     bool quiet;
+    int ref_begin;
+    int ref_end;
     codonalign::ScoringScheme<int, seqan::Blosum62> scoring_scheme;
 };
 
@@ -33,12 +35,24 @@ int parse_args(const int argc, const char** argv, Options& options)
     using namespace seqan;
     using codonalign::Macse454Default;
     ArgumentParser parser("codon-align");
+
+    addSection(parser, "INPUTS/OUTPUTS");
     addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "ref_fasta"));
     addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "qry_fastx"));
     addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "output_prefix"));
 
     addOption(parser, ArgParseOption("", "fastq", "Input is FASTQ."));
-    addOption(parser, ArgParseOption("q", "quiet", "Align quietly."));
+
+    addSection(parser, "REFERENCE INDEXES");
+    addOption(parser, ArgParseOption("b", "begin", "0-based index to start on reference",
+                                     ArgParseArgument::INTEGER));
+    setDefaultValue(parser, "begin", 0);
+    addOption(parser, ArgParseOption("e", "end", "0-based index to end on reference (non-inclusive)",
+                                     ArgParseArgument::INTEGER));
+    setDefaultValue(parser, "end", -1);
+
+    // Scoring
+    addSection(parser, "SCORING");
     addOption(parser, ArgParseOption("fo", "gap-open", "", ArgParseArgument::INTEGER));
     setDefaultValue(parser, "gap-open", Macse454Default.gapopen);
     addOption(parser, ArgParseOption("ge", "gap-extend", "", ArgParseArgument::INTEGER));
@@ -49,6 +63,9 @@ int parse_args(const int argc, const char** argv, Options& options)
     setDefaultValue(parser, "frameshift", Macse454Default.frameshift);
     addOption(parser, ArgParseOption("hpfs", "homopolymer-frameshift", "", ArgParseArgument::INTEGER));
     setDefaultValue(parser, "homopolymer-frameshift", Macse454Default.homopolymer_frameshift);
+
+    addSection(parser, "MISC");
+    addOption(parser, ArgParseOption("q", "quiet", "Align quietly."));
 
     addUsageLine(parser, "[options] <reference_fasta> <query_fasta> <output_prefix>");
     setDate(parser, __DATE__);
@@ -67,6 +84,9 @@ int parse_args(const int argc, const char** argv, Options& options)
     getArgumentValue(options.output_prefix, parser, 2);
     getOptionValue(options.is_fastq, parser, "fastq");
     getOptionValue(options.quiet, parser, "quiet");
+
+    getOptionValue(options.ref_begin, parser, "begin");
+    getOptionValue(options.ref_end, parser, "end");
 
     // Scoring
     codonalign::ScoringScheme<int, seqan::Blosum62> &scheme = options.scoring_scheme;
@@ -183,6 +203,16 @@ int perform_alignment(const Options& options)
         std::cerr << "Error reading: " << options.ref_fasta_path << '\n';
     }
 
+    int ref_end = options.ref_end;
+    if(options.ref_end == -1)
+        ref_end = length(ref_seq);
+
+    assert(options.ref_begin >= 0 && options.ref_begin < length(ref_seq));
+    assert(ref_end >= 0 && ref_end <= length(ref_seq));
+    assert(ref_end > options.ref_begin);
+
+    seqan::IupacString trimmed_ref = infix(ref_seq, options.ref_begin, ref_end);
+
     typedef seqan::StringSet<seqan::CharString> TNameStore;
     typedef seqan::NameStoreCache<TNameStore>   TNameStoreCache;
     typedef seqan::BamIOContext<TNameStore>     TBamIOContext;
@@ -245,13 +275,13 @@ int perform_alignment(const Options& options)
     while(read_record() == 0) {
         StringSet<CharString> parts;
         strSplit(parts, qry_name, ' ', true, 1);
-        codonalign::CodonAlignment<int> a = codonalign::codon_align_sw(ref_seq, qry_seq, options.scoring_scheme);
+        codonalign::CodonAlignment<int> a = codonalign::codon_align_sw(trimmed_ref, qry_seq, options.scoring_scheme);
         BamAlignmentRecord record;
 
         record.qName = parts[0];
         record.flag = 0;
         record.rId = 0;
-        record.pos = beginPosition(row(a.dna_alignment, 0));
+        record.pos = options.ref_begin + beginPosition(row(a.dna_alignment, 0));
         record.seq = qry_seq;
         record.qual = qry_qualities;
         record.mapQ = 30; // TODO: Assign
