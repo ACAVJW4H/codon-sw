@@ -47,6 +47,8 @@ int parse_args(const int argc, const char** argv, Options& options)
     setDefaultValue(parser, "stop-codon", Macse454Default.stop);
     addOption(parser, ArgParseOption("fs", "frameshift", "", ArgParseArgument::INTEGER));
     setDefaultValue(parser, "frameshift", Macse454Default.frameshift);
+    addOption(parser, ArgParseOption("hpfs", "homopolymer-frameshift", "", ArgParseArgument::INTEGER));
+    setDefaultValue(parser, "homopolymer-frameshift", Macse454Default.homopolymer_frameshift);
 
     addUsageLine(parser, "[options] <reference_fasta> <query_fasta> <output_prefix>");
     setDate(parser, __DATE__);
@@ -72,6 +74,7 @@ int parse_args(const int argc, const char** argv, Options& options)
     getOptionValue(scheme.gapextend, parser, "gap-extend");
     getOptionValue(scheme.stop, parser, "stop-codon");
     getOptionValue(scheme.frameshift, parser, "frameshift");
+    getOptionValue(scheme.homopolymer_frameshift, parser, "homopolymer-frameshift");
 
     return 0;
 }
