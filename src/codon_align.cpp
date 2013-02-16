@@ -34,7 +34,7 @@ int parse_args(const int argc, const char** argv, Options& options)
 {
     using namespace seqan;
     using codonalign::Macse454Default;
-    ArgumentParser parser("codon-align");
+    ArgumentParser parser("codon-sw");
 
     addSection(parser, "INPUTS/OUTPUTS");
     addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "ref_fasta"));

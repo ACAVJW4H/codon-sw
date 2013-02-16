@@ -34,12 +34,12 @@ set(CPP_FILES
   )
 add_library(codonaligner-static STATIC ${CPP_FILES})
 
-add_executable(codon-align ${CMAKE_CURRENT_SOURCE_DIR}/src/codon_align.cpp)
+add_executable(codon-sw ${CMAKE_CURRENT_SOURCE_DIR}/src/codon_align.cpp)
 
 find_package(ZLIB REQUIRED)
 if ( ZLIB_FOUND )
     include_directories( ${ZLIB_INCLUDE_DIRS} )
-    target_link_libraries( codon-align ${ZLIB_LIBRARIES} )
+    target_link_libraries( codon-sw ${ZLIB_LIBRARIES} )
     set(SEQAN_HAS_ZLIB true)
     add_definitions( -DSEQAN_HAS_ZLIB)
 endif( ZLIB_FOUND )
@@ -47,12 +47,12 @@ endif( ZLIB_FOUND )
 find_package(BZip2 REQUIRED)
 if( BZIP2_FOUND )
     include_directories( ${BZIP2_INCLUDE_DIRS} )
-    target_link_libraries( codon-align ${BZIP2_LIBRARIES} )
+    target_link_libraries( codon-sw ${BZIP2_LIBRARIES} )
     set(SEQAN_HAS_BZIP2 true)
     add_definitions( -DSEQAN_HAS_BZIP2 )
 
 endif( BZIP2_FOUND )
 
-target_link_libraries(codon-align codonaligner-static)
-install(TARGETS codon-align
+target_link_libraries(codon-sw codonaligner-static)
+install(TARGETS codon-sw
         RUNTIME DESTINATION bin)
