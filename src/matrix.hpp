@@ -10,6 +10,7 @@
 namespace codonalign
 {
 
+/// \brief A simple matrix representation
 template<typename T>
 class Matrix
 {

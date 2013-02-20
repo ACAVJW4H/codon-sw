@@ -1,3 +1,5 @@
+/// \file codon_smithwaterman_gotoh.hpp
+/// \brief Local codon alignments with affine gap penalty
 #ifndef CODON_SMITH_WATERMAN_GOTOH_H
 #define CODON_SMITH_WATERMAN_GOTOH_H
 
@@ -16,7 +18,6 @@
 
 namespace codonalign
 {
-
 
 template<typename TScore, typename TMatrix>
 struct ScoringScheme
@@ -65,44 +66,7 @@ const Traceback T00{0,0},
                 T32{3,2},
                 T33{3,3};
 
-// For debugging
-::std::ostream& operator<<(std::ostream& os, const Traceback& t)
-{
-    os << "{" << static_cast<unsigned short>(t.x_offset) << ','
-        << static_cast<unsigned short>(t.y_offset) << '}';
-    return os;
-}
-
-template<typename A, typename B>
-::std::ostream& operator<<(std::ostream& os, const std::pair<A,B> p)
-{
-    os << "(" << p.first << ',' << p.second << '}';
-    return os;
-}
-
-template<typename A>
-::std::ostream& operator<<(std::ostream& os, const std::vector<A> v)
-{
-    os << "(";
-    for(const auto &a : v)
-        os << a << ',';
-    os << ')';
-    return os;
-}
-
-template<typename T>
-::std::ostream& operator<<(std::ostream& os, const codonalign::Matrix<T>& m)
-{
-    for(size_t i = 0; i < m.nrows(); i++) {
-        for(size_t j = 0; j < m.ncols(); j++) {
-            os << m(i, j) << '\t';
-        }
-        os << std::endl;
-    }
-    return os;  // for multiple << operators.
-}
-
-/// returns vector, where v[i] = translation of codon v[i-2:i]
+/// returns vector, where \c v[i] = translation of codon \c v[i-2:i]
 std::vector<seqan::AminoAcid> _translations(const seqan::IupacString s)
 {
     const unsigned l = seqan::length(s);
@@ -127,13 +91,19 @@ struct CodonAlignment
     }
 };
 
+/// \brief Returns the index containing the maximum element between \c b and \c e
+///
+/// \param b Begin iterator
+/// \param e End iterator
 template<typename TIter>
-size_t max_index(TIter b, TIter e)
+inline size_t max_index(TIter b, TIter e)
 {
     return std::max_element(b, e) - b;
 }
 
-std::vector<bool> is_homopolymer(const seqan::IupacString& s)
+/// \brief \c result[i] indicates whether \c s[i] contains the same value as \c s[i-1]
+template<typename T>
+std::vector<bool> _is_homopolymer(const seqan::String<T>& s)
 {
     using namespace seqan;
     const size_t l = seqan::length(s);
@@ -147,9 +117,15 @@ std::vector<bool> is_homopolymer(const seqan::IupacString& s)
     return result;
 }
 
+/// \brief Alignment traceback
+///
+/// \param s1 Reference string
+/// \param s2 Query string
+/// \param d d matrix (matches)
+/// \param trace Traceback entries
 template<typename TScore>
 CodonAlignment<TScore>
-traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
+_traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
           const codonalign::Matrix<TScore>& d,
           const codonalign::Matrix<Traceback>& trace)
 {
@@ -244,9 +220,11 @@ traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
     return result;
 }
 
-/** \brief Align s1 to s2
+/** \brief Align \c s1 to \c s2
  *
- * Calculates the following recursion:
+ * Aligns using the following recursion:
+ *
+ * Best score ending in deletion in \c s1:
  * \f[
  * P_{i,j} = \max \begin{cases} d_{i-3,j} + stop\_s1 + g_o,\\
  *                              p_{i-3,j} + stop\_s1 + g_e,\\
@@ -259,6 +237,7 @@ traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
  *                 \end{cases}
  * \f]
  *
+ * Best score ending in deletion in \c s2:
  * \f[
  * Q_{i,j} = \max \begin{cases} d_{i,j-3} + stop\_s2 + g_o, \\
  *                              q_{i,j-3} + stop\_s2 + g_e, \\
@@ -270,6 +249,8 @@ traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
  *                              q_{i,j-1} + stop\_s2 + \delta + g_e
  *                 \end{cases}
  * \f]
+ *
+ * Best score ending in a match:
  * \f[
  * D_{i,j} = \max \begin{cases}
  *                   0 \\
@@ -303,7 +284,7 @@ CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan:
     const unsigned l1 = seqan::length(s1), l2 = seqan::length(s2);
     const vector<AminoAcid> t1 = _translations(s1),
                             t2 = _translations(s2);
-    const vector<bool> is_hp = is_homopolymer(s2);
+    const vector<bool> is_hp = _is_homopolymer(s2);
 
     Matrix<TScore> d(l1 + 1, l2 + 1), // Match
                    p(l1 + 1, l2 + 1), // Deletion in query
@@ -422,6 +403,7 @@ CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan:
                 if(j >= 2) scores.emplace_back(d(i-2, j-2) + 2*frameshift, T22);
             }
 
+            // Finally, best score from P, Q
             scores.push_back(p_max);
             scores.push_back(q_max);
 
@@ -432,7 +414,7 @@ CodonAlignment<TScore> codon_align_sw(const seqan::IupacString& s1, const seqan:
         }
     }
 
-    return traceback(s1, s2, d, trace);
+    return _traceback(s1, s2, d, trace);
 }
 
 } // namespace codonalign

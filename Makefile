@@ -1,14 +1,14 @@
-.PHONY: all compile setup-cmake clean style doc
+.PHONY: debug release compile setup-cmake clean style doc
 
 BUILD = _build
-
-debug: CMAKE_BUILD_TYPE = Debug
-debug: BUILD_DIR = $(BUILD)/$(CMAKE_BUILD_TYPE)
-debug: compile
 
 release: CMAKE_BUILD_TYPE = Release
 release: BUILD_DIR = $(BUILD)/$(CMAKE_BUILD_TYPE)
 release: compile
+
+debug: CMAKE_BUILD_TYPE = Debug
+debug: BUILD_DIR = $(BUILD)/$(CMAKE_BUILD_TYPE)
+debug: compile
 
 compile: setup-cmake
 	+make -C$(BUILD_DIR)
