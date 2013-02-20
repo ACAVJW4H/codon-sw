@@ -206,16 +206,8 @@ _traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
     for(const size_t g : aa2_gaps)
         insertGap(row(result.aa_alignment, 1), length(aa2) - g);
 
-    if(length(row(result.dna_alignment, 0)) != length(row(result.dna_alignment, 1))) {
-        std::cerr << length(row(result.dna_alignment, 0)) << ' ' << length(row(result.dna_alignment, 1)) << std::endl;
-        std::cerr << result.dna_alignment;
-        assert(false);
-    }
-    if(length(row(result.aa_alignment, 0)) != length(row(result.aa_alignment, 1))) {
-        std::cerr << length(row(result.aa_alignment, 0)) << ' ' << length(row(result.aa_alignment, 1)) << std::endl;
-        std::cerr << result.aa_alignment;
-        assert(false);
-    }
+    assert(length(row(result.dna_alignment, 0)) == length(row(result.dna_alignment, 1)));
+    assert(length(row(result.aa_alignment, 0)) == length(row(result.aa_alignment, 1)));
 
     return result;
 }
