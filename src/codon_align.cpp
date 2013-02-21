@@ -64,6 +64,7 @@ int parse_args(const int argc, const char** argv, Options& options)
     addOption(parser, ArgParseOption("hpfs", "homopolymer-frameshift", "", ArgParseArgument::INTEGER));
     setDefaultValue(parser, "homopolymer-frameshift", Macse454Default.homopolymer_frameshift);
 
+    // Quietude
     addSection(parser, "MISC");
     addOption(parser, ArgParseOption("q", "quiet", "Align quietly."));
 
@@ -79,6 +80,7 @@ int parse_args(const int argc, const char** argv, Options& options)
         return res;
     }
 
+    // Save parsed arguments
     getArgumentValue(options.ref_fasta_path, parser, 0);
     getArgumentValue(options.qry_fasta_path, parser, 1);
     getArgumentValue(options.output_prefix, parser, 2);
@@ -99,6 +101,7 @@ int parse_args(const int argc, const char** argv, Options& options)
     return 0;
 }
 
+/// \brief Write a pairwise alignment in FASTA format to an output stream
 template<typename T, typename TName>
 void print_alignment(const seqan::Align<T>& align, std::ostream& out, const TName& ref_name, const TName& read_name) {
     using namespace seqan;
@@ -118,10 +121,15 @@ void print_alignment(const seqan::Align<T>& align, std::ostream& out, const TNam
     }
 }
 
+/// \brief Convert a pairwise alignment to a CIGAR string
+///
+/// \c alignment should have two sequences. The first is treated as the reference, the second the query.
+/// Clipping is converted to CIGAR's soft-clip (S)
 template<typename T>
-void align_cigar(const seqan::Align<T>& alignment, seqan::String<seqan::CigarElement<>>& result)
+void alignment_to_cigar(const seqan::Align<T>& alignment, seqan::String<seqan::CigarElement<>>& result)
 {
     using namespace seqan;
+    assert(length(alignment) == 2);
     auto clip_begin = clippedBeginPosition(row(alignment, 1));
     auto query_length = length(source(row(alignment, 1)));
     if(clip_begin > 0)
@@ -169,6 +177,7 @@ void align_cigar(const seqan::Align<T>& alignment, seqan::String<seqan::CigarEle
     assert(total_count == query_length);
 }
 
+/// \brief Calculate number of mismatches between query and reference (stores as tag NM in SAM record)
 template<typename T>
 int calculate_nm(const seqan::Align<T>& alignment)
 {
@@ -184,7 +193,11 @@ int calculate_nm(const seqan::Align<T>& alignment)
     }
     return result;
 }
-
+/// \brief Actually run the alignment algorithm.
+///
+/// This function:
+/// * Reads the reference sequence
+/// * Reads query sequences, aligns each to the reference sequence, writes SAM.
 template<typename Alphabet>
 int perform_alignment(const Options& options)
 {
@@ -213,6 +226,7 @@ int perform_alignment(const Options& options)
 
     seqan::IupacString trimmed_ref = infix(ref_seq, options.ref_begin, ref_end);
 
+    // Prep SAM file
     typedef seqan::StringSet<seqan::CharString> TNameStore;
     typedef seqan::NameStoreCache<TNameStore>   TNameStoreCache;
     typedef seqan::BamIOContext<TNameStore>     TBamIOContext;
@@ -221,18 +235,25 @@ int perform_alignment(const Options& options)
     appendValue(nameStore, ref_id);
     TNameStoreCache nameStoreCache(nameStore);
     TBamIOContext   context(nameStore, nameStoreCache);
+
+    // Build a header
     BamHeader header;
     BamHeaderRecord firstRecord;
+
+    // Version
     firstRecord.type = BAM_HEADER_FIRST;
     appendValue(firstRecord.tags, BamHeaderRecord::TTag("VN", "1.0"));
     appendValue(header.records, firstRecord);
 
+    // Reference sequence
     BamHeaderRecord seq_record;
     seq_record.type = BAM_HEADER_REFERENCE;
     appendValue(seq_record.tags, BamHeaderRecord::TTag("SN", ref_id));
     appendValue(seq_record.tags, BamHeaderRecord::TTag("LN", std::to_string(length(ref_seq))));
     appendValue(header.records, seq_record);
     appendValue(header.sequenceInfos, BamHeader::TSequenceInfo(ref_id, seqan::length(ref_seq)));
+
+    // Program information
     BamHeaderRecord program_record;
     program_record.type = seqan::BAM_HEADER_PROGRAM;
     appendValue(program_record.tags, BamHeaderRecord::TTag("ID", 1));
@@ -241,6 +262,7 @@ int perform_alignment(const Options& options)
     appendValue(program_record.tags, BamHeaderRecord::TTag("CL", options.command_line));
     appendValue(header.records, program_record);
 
+    // Read query sequences from FASTA / FASTQ, align
     std::fstream qry_fasta(options.qry_fasta_path, std::ios_base::in | std::ios_base::binary);
     if (!qry_fasta.good()) {
         std::cerr << "Could not open" << options.qry_fasta_path << '\n';
@@ -261,6 +283,8 @@ int perform_alignment(const Options& options)
     std::ofstream out_nt(options.output_prefix + "_nt.fasta");
     std::ofstream out_aa(options.output_prefix + "_aa.fasta");
 
+    // Helper function to read a sequence
+    // Returns 0 if record read successfully
     auto read_record = [&qry_name, &qry_seq, &qry_reader, &qry_qualities]() -> int
     {
         if(HasQualities<Alphabet>::VALUE)
@@ -271,33 +295,41 @@ int perform_alignment(const Options& options)
         return result;
     };
 
-    size_t c = 0;
+    size_t c = 0;  // Number of sequences processed
     while(read_record() == 0) {
         StringSet<CharString> parts;
+
+        // Label record with first part of query name
         strSplit(parts, qry_name, ' ', true, 1);
         codonalign::CodonAlignment<int> a = codonalign::codon_align_sw(trimmed_ref, qry_seq, options.scoring_scheme);
         BamAlignmentRecord record;
 
+        // Populate record
         record.qName = parts[0];
         record.flag = 0;
         record.rId = 0;
         record.pos = options.ref_begin + beginPosition(row(a.dna_alignment, 0));
         record.seq = qry_seq;
         record.qual = qry_qualities;
-        record.mapQ = 30; // TODO: Assign
-        align_cigar(a.dna_alignment, record.cigar);
-        BamTagsDict d(record.tags);
-        setTagValue(d, "AS", a.max_score);
-        setTagValue(d, "NM", calculate_nm(a.dna_alignment));
+        record.mapQ = 40;
+        alignment_to_cigar(a.dna_alignment, record.cigar);  // Adds CIGAR string
 
+        // Add tags
+        BamTagsDict d(record.tags);
+        setTagValue(d, "AS", a.max_score);  // Alignment score
+        setTagValue(d, "NM", calculate_nm(a.dna_alignment));  // Number of mismatches
+
+        // Save the record
         if(write2(out_stream, record, context, seqan::Sam()) != 0) {
-            std::cerr << "Could not write BAM record\n";
+            std::cerr << "Could not write SAM record\n";
             return 1;
         }
 
+        // Primitive logging
         if(c++ % 10 == 0 && !options.quiet)
             std::cerr << std::setw(10) << c << " " << qry_name << '\r';
 
+        // Write the DNA and AA alignments
         print_alignment(a.dna_alignment, out_nt, ref_id, qry_name);
         print_alignment(a.aa_alignment, out_aa, ref_id, qry_name);
     }
