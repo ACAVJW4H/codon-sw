@@ -20,7 +20,7 @@ struct Options
 {
     std::string ref_fasta_path;
     std::string qry_fasta_path;
-    std::string output_sam;
+    std::string output_bam;
     std::string output_fasta;
     seqan::CharString command_line;
     bool is_fastq;
@@ -41,8 +41,9 @@ int parse_args(const int argc, const char** argv, Options& options)
     addSection(parser, "INPUTS/OUTPUTS");
     addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "ref_fasta"));
     addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "qry_fastx"));
-    addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "output_sam"));
-    addOption(parser, ArgParseOption("", "fasta-pairs", "", ArgParseArgument::STRING));
+    addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "output_bam"));
+    addOption(parser, ArgParseOption("", "fasta-pairs", "Path to write pairwise alignments in FASTA format",
+                ArgParseArgument::STRING));
 
     addSection(parser, "REFERENCE INDEXES");
     addOption(parser, ArgParseOption("b", "begin", "0-based index to start on reference",
@@ -69,7 +70,7 @@ int parse_args(const int argc, const char** argv, Options& options)
     addSection(parser, "MISC");
     addOption(parser, ArgParseOption("q", "quiet", "Align quietly."));
 
-    addUsageLine(parser, "[options] <reference_fasta> <query_fasta> <output_prefix>");
+    addUsageLine(parser, "[options] <reference_fasta> <query_fasta> <output_bam>");
     setDate(parser, __DATE__);
     setVersion(parser, CODON_ALIGN_VERSION);
 
@@ -84,7 +85,7 @@ int parse_args(const int argc, const char** argv, Options& options)
     // Save parsed arguments
     getArgumentValue(options.ref_fasta_path, parser, 0);
     getArgumentValue(options.qry_fasta_path, parser, 1);
-    getArgumentValue(options.output_sam, parser, 2);
+    getArgumentValue(options.output_bam, parser, 2);
     getOptionValue(options.output_fasta, parser, "fasta-pairs");
     getOptionValue(options.quiet, parser, "quiet");
 
@@ -273,8 +274,12 @@ int perform_alignment(const Options& options)
     IupacString qry_seq;
     seqan::String<char> qry_qualities;
 
-    std::fstream out_stream(options.output_sam, std::ios::binary | std::ios::out);
-    if(write2(out_stream, header, context, seqan::Sam()) != 0) {
+    seqan::Stream<seqan::Bgzf> out_stream;
+    if(!open(out_stream, options.output_bam.c_str(), "w")) {
+        std::cerr << "Could not BAM file for writing:" << options.output_bam << '\n';
+        return 1;
+    }
+    if(write2(out_stream, header, context, seqan::Bam()) != 0) {
         std::cerr << "Could not write header\n";
         return 1;
     }
@@ -311,8 +316,8 @@ int perform_alignment(const Options& options)
         setTagValue(d, "NM", calculate_nm(a.dna_alignment));  // Number of mismatches
 
         // Save the record
-        if(write2(out_stream, record, context, seqan::Sam()) != 0) {
-            std::cerr << "Could not write SAM record\n";
+        if(write2(out_stream, record, context, seqan::Bam()) != 0) {
+            std::cerr << "Could not write BAM record\n";
             return 1;
         }
 

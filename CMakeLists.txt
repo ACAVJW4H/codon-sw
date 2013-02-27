@@ -9,25 +9,26 @@ set(CMAKE_MODULE_PATH
 include(GetGitRevisionDescription)
 
 git_describe(GIT_DESCRIPTION --always --long)
-#set(CODON_ALIGN_VERSION_MAJOR 0)
-#set(CODON_ALIGN_VERSION_MINOR 1)
-#set(CODON_ALIGN_VERSION_PATCH 0)
 configure_file (
   "${PROJECT_SOURCE_DIR}/src/config.h.in"
   "${PROJECT_BINARY_DIR}/config.h"
   )
 include_directories("${PROJECT_BINARY_DIR}")
 
-set(CMAKE_CXX_FLAGS "-std=c++0x -Wall -pedantic")
+set(CMAKE_CXX_FLAGS "-std=c++0x -Wall -Wextra -pedantic")
 set(SEQAN_C++11_STANDARD "ON")
+
+# Flags for Debug / Release
+if("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
+  add_definitions(-DSEQAN_ENABLE_DEBUG=0)
+endif()
+if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+  add_definitions(-DSEQAN_ENABLE_DEBUG=1)
+endif()
+
 include_directories("deps/seqan/core/include")
 include_directories("deps/seqan/extras/include")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-
-#list(APPEND CMAKE_MODULE_PATH 
-  #${CMAKE_CURRENT_SOURCE_DIR}/deps/seqan/util/cmake)
-#find_package(SeqAn)
-
 
 set(CPP_FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/seqan_codons.cpp
@@ -36,12 +37,13 @@ add_library(codonaligner-static STATIC ${CPP_FILES})
 
 add_executable(codon-sw ${CMAKE_CURRENT_SOURCE_DIR}/src/codon_align.cpp)
 
+# ZLIB required for BAM
 find_package(ZLIB REQUIRED)
 if ( ZLIB_FOUND )
     include_directories( ${ZLIB_INCLUDE_DIRS} )
     target_link_libraries( codon-sw ${ZLIB_LIBRARIES} )
     set(SEQAN_HAS_ZLIB true)
-    add_definitions( -DSEQAN_HAS_ZLIB)
+    add_definitions(-DSEQAN_HAS_ZLIB)
 endif( ZLIB_FOUND )
 
 # Optional: for BZIP-compressed sequences
