@@ -15,11 +15,13 @@
 
 using namespace std;
 
+/// Storage for command-line arguments
 struct Options
 {
     std::string ref_fasta_path;
     std::string qry_fasta_path;
-    std::string output_prefix;
+    std::string output_sam;
+    std::string output_fasta;
     seqan::CharString command_line;
     bool is_fastq;
     bool quiet;
@@ -39,9 +41,8 @@ int parse_args(const int argc, const char** argv, Options& options)
     addSection(parser, "INPUTS/OUTPUTS");
     addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "ref_fasta"));
     addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "qry_fastx"));
-    addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "output_prefix"));
-
-    addOption(parser, ArgParseOption("", "fastq", "Input is FASTQ."));
+    addArgument(parser, ArgParseArgument(seqan::ArgParseArgument::STRING, "output_sam"));
+    addOption(parser, ArgParseOption("", "fasta-pairs", "", ArgParseArgument::STRING));
 
     addSection(parser, "REFERENCE INDEXES");
     addOption(parser, ArgParseOption("b", "begin", "0-based index to start on reference",
@@ -83,8 +84,8 @@ int parse_args(const int argc, const char** argv, Options& options)
     // Save parsed arguments
     getArgumentValue(options.ref_fasta_path, parser, 0);
     getArgumentValue(options.qry_fasta_path, parser, 1);
-    getArgumentValue(options.output_prefix, parser, 2);
-    getOptionValue(options.is_fastq, parser, "fastq");
+    getArgumentValue(options.output_sam, parser, 2);
+    getOptionValue(options.output_fasta, parser, "fasta-pairs");
     getOptionValue(options.quiet, parser, "quiet");
 
     getOptionValue(options.ref_begin, parser, "begin");
@@ -129,7 +130,7 @@ template<typename T>
 void alignment_to_cigar(const seqan::Align<T>& alignment, seqan::String<seqan::CigarElement<>>& result)
 {
     using namespace seqan;
-    assert(length(alignment) == 2);
+    assert(length(rows(alignment)) == 2);
     auto clip_begin = clippedBeginPosition(row(alignment, 1));
     auto query_length = length(source(row(alignment, 1)));
     if(clip_begin > 0)
@@ -198,7 +199,6 @@ int calculate_nm(const seqan::Align<T>& alignment)
 /// This function:
 /// * Reads the reference sequence
 /// * Reads query sequences, aligns each to the reference sequence, writes SAM.
-template<typename Alphabet>
 int perform_alignment(const Options& options)
 {
     using namespace seqan;
@@ -263,40 +263,31 @@ int perform_alignment(const Options& options)
     appendValue(header.records, program_record);
 
     // Read query sequences from FASTA / FASTQ, align
-    std::fstream qry_fasta(options.qry_fasta_path, std::ios_base::in | std::ios_base::binary);
-    if (!qry_fasta.good()) {
+    SequenceStream qry_stream(options.qry_fasta_path.c_str());
+    if (!isGood(qry_stream)) {
         std::cerr << "Could not open" << options.qry_fasta_path << '\n';
         return 1;
     }
-    RecordReader<std::fstream, SinglePass<> > qry_reader(qry_fasta);
 
     seqan::CharString qry_name;
     IupacString qry_seq;
     seqan::String<char> qry_qualities;
 
-    std::fstream out_stream(options.output_prefix + ".sam", std::ios::binary | std::ios::out);
+    std::fstream out_stream(options.output_sam, std::ios::binary | std::ios::out);
     if(write2(out_stream, header, context, seqan::Sam()) != 0) {
         std::cerr << "Could not write header\n";
         return 1;
     }
 
-    std::ofstream out_nt(options.output_prefix + "_nt.fasta");
-    std::ofstream out_aa(options.output_prefix + "_aa.fasta");
-
-    // Helper function to read a sequence
-    // Returns 0 if record read successfully
-    auto read_record = [&qry_name, &qry_seq, &qry_reader, &qry_qualities]() -> int
-    {
-        if(HasQualities<Alphabet>::VALUE)
-            return readRecord(qry_name, qry_seq, qry_qualities, qry_reader, Fastq());
-
-        int result = readRecord(qry_name, qry_seq, qry_reader, Fasta());
-        qry_qualities = "*";
-        return result;
-    };
+    std::ofstream out_nt;
+    if(!options.output_fasta.empty())
+        out_nt.open(options.output_fasta);
 
     size_t c = 0;  // Number of sequences processed
-    while(read_record() == 0) {
+    while(readRecord(qry_name, qry_seq, qry_qualities, qry_stream) == 0) {
+        if(seqan::empty(qry_qualities))
+            qry_qualities = "*";
+
         StringSet<CharString> parts;
 
         // Label record with first part of query name
@@ -329,13 +320,13 @@ int perform_alignment(const Options& options)
         if(c++ % 10 == 0 && !options.quiet)
             std::cerr << std::setw(10) << c << " " << qry_name << '\r';
 
-        // Write the DNA and AA alignments
-        print_alignment(a.dna_alignment, out_nt, ref_id, qry_name);
-        print_alignment(a.aa_alignment, out_aa, ref_id, qry_name);
+        // Write the DNA alignments
+        if(out_nt.is_open()) {
+            print_alignment(a.dna_alignment, out_nt, ref_id, qry_name);
+        }
     }
 
     return 0;
-
 }
 
 int main(const int argc, const char** argv)
@@ -350,10 +341,5 @@ int main(const int argc, const char** argv)
         append(options.command_line, argv[i]);
     }
 
-    // Parse
-    if(options.is_fastq) {
-        return perform_alignment<seqan::Dna5Q>(options);
-    } else {
-        return perform_alignment<seqan::Iupac>(options);
-    }
+    return perform_alignment(options);
 }

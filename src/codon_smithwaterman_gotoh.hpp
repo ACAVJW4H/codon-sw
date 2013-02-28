@@ -80,7 +80,6 @@ template <typename TScore>
 struct CodonAlignment
 {
     seqan::Align<seqan::IupacString> dna_alignment;
-    seqan::Align<seqan::Peptide> aa_alignment;
     TScore max_score;
 
     CodonAlignment(const seqan::IupacString& s1, const seqan::IupacString& s2) {
@@ -135,8 +134,6 @@ _traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
 
     const vector<AminoAcid> t1 = _translations(s1),
                             t2 = _translations(s2);
-    Peptide aa1, aa2;
-    vector<size_t> aa1_gaps, aa2_gaps;
     CodonAlignment<TScore> result(s1, s2);
 
     // Find maximum score
@@ -160,30 +157,13 @@ _traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
 
         assert(tb.x_offset + tb.y_offset > 0);
 
-        if(tb.x_offset == 3)
-            append(aa1, t1[i-1]);
-        if(tb.y_offset == 3)
-            append(aa2, t2[j-1]);
-
         const short diff = tb.y_offset - tb.x_offset;
 
         if(tb.y_offset == 3 && tb.x_offset != 3) { // Y consumed amino acid
-            aa1_gaps.push_back(length(aa1));
             insertGaps(row(result.dna_alignment, 0), i, diff);
         } else if (tb.x_offset == 3 && tb.y_offset != 3) { // X consumed amino acid
-            aa2_gaps.push_back(length(aa2));
             insertGaps(row(result.dna_alignment, 1), j, -diff);
         } else if(diff) { // Frameshift in x and/or y - add a codon
-            if(tb.x_offset > 0) {
-                append(aa1, 'X');
-            } else {
-                aa1_gaps.push_back(length(aa1));
-            }
-            if(tb.y_offset > 0) {
-                append(aa2, 'X');
-            } else {
-                aa2_gaps.push_back(length(aa2));
-            }
             insertGaps(row(result.dna_alignment, 0), i, 3 - tb.x_offset);
             insertGaps(row(result.dna_alignment, 1), j, 3 - tb.y_offset);
         }
@@ -192,22 +172,10 @@ _traceback(const seqan::IupacString& s1, const seqan::IupacString& s2,
         j -= tb.y_offset;
     }
 
-
     setBeginPosition(row(result.dna_alignment, 0), i);
     setBeginPosition(row(result.dna_alignment, 1), j);
 
-    reverse(aa1);
-    reverse(aa2);
-    resize(rows(result.aa_alignment), 2);
-    assignSource(row(result.aa_alignment, 0), aa1);
-    assignSource(row(result.aa_alignment, 1), aa2);
-    for(const size_t g : aa1_gaps)
-        insertGap(row(result.aa_alignment, 0), length(aa1) - g);
-    for(const size_t g : aa2_gaps)
-        insertGap(row(result.aa_alignment, 1), length(aa2) - g);
-
     assert(length(row(result.dna_alignment, 0)) == length(row(result.dna_alignment, 1)));
-    assert(length(row(result.aa_alignment, 0)) == length(row(result.aa_alignment, 1)));
 
     return result;
 }

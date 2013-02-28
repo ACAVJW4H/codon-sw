@@ -44,7 +44,8 @@ if ( ZLIB_FOUND )
     add_definitions( -DSEQAN_HAS_ZLIB)
 endif( ZLIB_FOUND )
 
-find_package(BZip2 REQUIRED)
+# Optional: for BZIP-compressed sequences
+find_package(BZip2)
 if( BZIP2_FOUND )
     include_directories( ${BZIP2_INCLUDE_DIRS} )
     target_link_libraries( codon-sw ${BZIP2_LIBRARIES} )

@@ -10,7 +10,7 @@ Pairwise alignments of coding sequences, using a modification of the algorithm d
 
 # Building
 
-Requires [cmake](http://www.cmake.org), `libbz2-dev`, and a compiler supporting C++11 (tested on g++ 4.6.3, clang++ 3.2).
+Requires [cmake](http://www.cmake.org), `libz-dev`, and a compiler supporting C++11 (tested on g++ 4.6.3, clang++ 3.2).
 
 To build:
 
@@ -20,13 +20,14 @@ The resulting executable will be placed in `_build/Release/codon-sw`
 
 # Usage
 
-    codon-sw <ref.fasta> <query.fast[aq]> <output_prefix>
+    codon-sw <ref.fasta> <query.fast[aq]> <output_sam>
 
-Generates three files:
+Generates:
 
 * `<output_prefix>.sam` - [SAM](http://samtools.sourceforge.net/)-format nucleotide alignment
-* `<output_prefix>_nt.fasta` - Pairwise alignments in FASTA format, alternating between reference and query sequences.
-* `<output_prefix>_aa.fasta` - Translation of `output_prefix_nt.fasta`
+
+If a `--fasta-pairs` option is provided, pairwise codon-alignments (which may
+be translated) are written to the argument.
 
 ## Options
 
