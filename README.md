@@ -20,14 +20,14 @@ The resulting executable will be placed in `_build/Release/codon-sw`
 
 # Usage
 
-    codon-sw <ref.fasta> <query.fast[aq]> <output_bam>
+    codon-sw <ref.fasta> <query.fast[q]> <output_bam>
 
 Generates:
 
-* `<output_prefix>.bam` - [BAM](http://samtools.sourceforge.net/)-format nucleotide alignment
+* `<output_bam>` - [BAM](http://samtools.sourceforge.net/)-format alignments to `ref.fasta`
 
 If a `--fasta-pairs` option is provided, pairwise codon-alignments (which may
-be translated) are written to the argument.
+be directly translated) are written to the argument.
 
 ## Options
 
