@@ -20,7 +20,7 @@ The resulting executable will be placed in `_build/Release/codon-sw`
 
 # Usage
 
-    codon-sw <ref.fasta> <query.fast[q]> <output_bam>
+    codon-sw <ref.fasta> <query.fastq> <output_bam>
 
 Generates:
 
